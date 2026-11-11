@@ -22,7 +22,7 @@ async def async_setup_entry(
     entry: AutobaytConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Add a switch for every relay channel of every non-shutter device."""
+    """Add a switch per relay channel; on shutters only the extra light channels."""
     coordinator = entry.runtime_data.devices
     known: set[tuple[str, int]] = set()
 
@@ -30,9 +30,7 @@ async def async_setup_entry(
     def _add_new() -> None:
         new = []
         for device in (coordinator.data or {}).values():
-            if device.is_shutter:
-                continue
-            for button_id in device.buttons:
+            for button_id in device.switch_channels():
                 key = (device.device_id, button_id)
                 if key not in known:
                     known.add(key)
@@ -62,9 +60,12 @@ class AutobaytSwitch(AutobaytEntity, SwitchEntity):
             return None
         button = device.buttons.get(self._button_id)
         label = button.name if button else None
-        if len(device.buttons) == 1 and (not label or label == device.name):
+        single = len(device.switch_channels()) == 1 and not device.is_shutter
+        if single and (not label or label == device.name):
             return None  # the switch takes the device's name
-        return label or f"Channel {self._button_id + 1}"
+        if not label:
+            return "Light" if device.is_shutter else f"Channel {self._button_id + 1}"
+        return label
 
     @property
     def available(self) -> bool:

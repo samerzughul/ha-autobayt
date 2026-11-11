@@ -14,6 +14,32 @@ from typing import Any
 # firmware updates on ordinary switches.
 _SHUTTER_PATTERN = re.compile(r"shutter|curtain|blind|roller|^(SH|CT|CR|CUR)\d", re.I)
 
+# On shutter controllers the first two channels drive the motor (up and
+# down) and are never exposed as switches. Any further channel is an
+# ordinary light relay on the same wall plate.
+SHUTTER_MOTOR_CHANNELS = frozenset({0, 1})
+
+# Raw fields kept for diagnostics must not identify the account, home or
+# hardware.
+_PRIVATE_KEY = re.compile(r"(^|_)id$|_ids?$|mac|ip|ssid|email|token|user|owner|serial|key", re.I)
+
+
+def public_fields(raw: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of raw backend fields without identifying values."""
+    out: dict[str, Any] = {}
+    for key, value in raw.items():
+        if key == "button_id":
+            out[key] = value
+        elif _PRIVATE_KEY.search(key):
+            out[key] = "**REDACTED**"
+        elif isinstance(value, dict):
+            out[key] = public_fields(value)
+        elif isinstance(value, list):
+            out[key] = [public_fields(v) if isinstance(v, dict) else v for v in value]
+        else:
+            out[key] = value
+    return out
+
 
 @dataclass(slots=True)
 class AutobaytButton:
@@ -37,6 +63,13 @@ class AutobaytDevice:
     is_shutter: bool
     position: int | None
     buttons: dict[int, AutobaytButton] = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    def switch_channels(self) -> list[int]:
+        """Return the channels to expose as switches."""
+        if self.is_shutter:
+            return [b for b in self.buttons if b not in SHUTTER_MOTOR_CHANNELS]
+        return list(self.buttons)
 
     @property
     def has_power_metering(self) -> bool:
@@ -122,4 +155,5 @@ def parse_device(raw: dict[str, Any], extra_shutter_models: Iterable[str] = ()) 
         is_shutter=shutter,
         position=_shutter_position(raw) if shutter else None,
         buttons=buttons,
+        raw=raw,
     )

@@ -59,13 +59,13 @@ Energy values Autobayt marks as missing, stale or incomplete show as unavailable
 
 ## Shutters
 
-Shutter controllers are recognised by their model name. They show the position Autobayt reports, but **cannot be opened, closed or stopped from Home Assistant yet**: Autobayt has not published a way to control shutters through its cloud, and driving a shutter's motor channels as two plain switches could run both directions at once. Control will be added when Autobayt provides it. Until then use the Autobayt app.
+Shutter controllers are recognised by their model name. On a shutter wall plate the first two channels drive the motor and are never shown as switches; any further channel (the light on the same plate) is an ordinary switch. They show the position Autobayt reports, but **cannot be opened, closed or stopped from Home Assistant yet**: Autobayt has not published a way to control shutters through its cloud, and driving a shutter's motor channels as two plain switches could run both directions at once. Control will be added when Autobayt provides it. Until then use the Autobayt app.
 
 If a shutter shows up as two switches instead, add its model name (shown on the device page) under **Shutter model names**, and please open an issue with the model name so it can be recognised automatically.
 
 ## Troubleshooting
 
-- **Diagnostics**: on the integration's page choose **Download diagnostics**. Tokens, account, location and device ids are removed from the file.
+- **Diagnostics**: on the integration's page choose **Download diagnostics**. It includes the fields Autobayt reports for each device and channel, with tokens, account, location and device ids removed.
 - **Debug logs**: enable debug logging for the integration. Logs never contain your token, account or device ids.
 
 ## Development

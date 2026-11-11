@@ -75,6 +75,7 @@ DEVICES: list[dict[str, Any]] = [
         "buttons": [
             {"button_id": 0, "name": "Up", "switch_state": False},
             {"button_id": 1, "name": "Down", "switch_state": False},
+            {"button_id": 2, "name": "Dim", "switch_state": True},
         ],
     },
     {

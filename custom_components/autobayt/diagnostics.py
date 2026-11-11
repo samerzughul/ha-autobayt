@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import CONF_LOCATION_ID, CONF_TOKEN, CONF_USER_ID
 from .coordinator import AutobaytConfigEntry
+from .models import public_fields
 
 TO_REDACT = {
     CONF_TOKEN,
@@ -30,6 +31,7 @@ async def async_get_config_entry_diagnostics(
     for index, device in enumerate((runtime.devices.data or {}).values(), start=1):
         item = asdict(device)
         item["device_id"] = f"device_{index}"
+        item["raw"] = public_fields(device.raw)
         devices.append(item)
 
     energy: dict[str, Any] | None = None

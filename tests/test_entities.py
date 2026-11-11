@@ -72,6 +72,10 @@ async def test_shutter_is_read_only_cover(hass, setup_integration):
     # Shutter channels are never exposed as switches.
     assert state_of(hass, "autobayt_sh-1_0") is None
     assert state_of(hass, "autobayt_sh-1_1") is None
+    # The extra light channel on the shutter plate is an ordinary switch.
+    light = state_of(hass, "autobayt_sh-1_2")
+    assert light.state == STATE_ON
+    assert light.attributes["friendly_name"].endswith("Dim")
 
 
 async def test_turn_on_sends_trigger_with_token(hass, setup_integration, fake, aioclient_mock):

@@ -57,6 +57,9 @@ async def test_diagnostics_redacted(hass, setup_integration):
     for secret in (TOKEN, USER_ID, LOC_ID, "sw-1", "pm-1"):
         assert secret not in text
     assert len(result["devices"]) == 4
+    shutter = next(d for d in result["devices"] if d["is_shutter"])
+    assert shutter["raw"]["loc_id"] == "**REDACTED**"
+    assert shutter["raw"]["buttons"][2] == {"button_id": 2, "name": "Dim", "switch_state": True}
 
 
 async def test_client_filters_location(hass, fake):
