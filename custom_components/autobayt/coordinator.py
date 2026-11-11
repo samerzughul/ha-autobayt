@@ -25,19 +25,21 @@ from .const import (
     COMMAND_PENDING_TIMEOUT,
     COMMAND_REFRESH_DELAYS,
     CONF_ENERGY,
+    CONF_LIGHT_WORDS,
     CONF_LOCATION_ID,
     CONF_SCAN_INTERVAL,
     CONF_SHUTTER_MODELS,
     CONF_TIMEZONE,
     CONF_USER_ID,
     DEFAULT_ENERGY_TIMEZONE,
+    DEFAULT_LIGHT_WORDS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     ENERGY_LIVE_INTERVAL,
     ENERGY_PERIOD_INTERVAL,
     MAX_BACKOFF_INTERVAL,
 )
-from .models import AutobaytDevice, parse_device
+from .models import AutobaytDevice, parse_device, split_words
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,8 +58,12 @@ type AutobaytConfigEntry = ConfigEntry[AutobaytRuntimeData]
 
 def shutter_models(entry: ConfigEntry) -> list[str]:
     """Return the owner's extra shutter model names from the options."""
-    raw = entry.options.get(CONF_SHUTTER_MODELS, "")
-    return [m.strip() for m in str(raw).split(",") if m.strip()]
+    return split_words(entry.options.get(CONF_SHUTTER_MODELS, ""))
+
+
+def light_words(entry: ConfigEntry) -> list[str]:
+    """Return the words that mark a channel as a light."""
+    return split_words(entry.options.get(CONF_LIGHT_WORDS, DEFAULT_LIGHT_WORDS))
 
 
 def _backoff(base: timedelta, failures: int, retry_after: float | None) -> timedelta:

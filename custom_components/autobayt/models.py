@@ -65,16 +65,29 @@ class AutobaytDevice:
     buttons: dict[int, AutobaytButton] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
-    def switch_channels(self) -> list[int]:
-        """Return the channels to expose as switches."""
+    def relay_channels(self) -> list[int]:
+        """Return the channels to expose (never a shutter's motor channels)."""
         if self.is_shutter:
             return [b for b in self.buttons if b not in SHUTTER_MOTOR_CHANNELS]
         return list(self.buttons)
+
+    def is_light(self, button_id: int, light_words: Iterable[str]) -> bool:
+        """Return True when a channel should be shown as a light."""
+        if self.is_shutter:
+            return True  # the extra channel on a shutter plate is its light
+        button = self.buttons.get(button_id)
+        name = (button.name if button else None) or ""
+        return any(re.search(rf"\b{re.escape(word)}", name, re.I) for word in light_words if word)
 
     @property
     def has_power_metering(self) -> bool:
         """Return True for models with a power meter (their names contain PM)."""
         return bool(self.model and "PM" in self.model.upper())
+
+
+def split_words(text: str) -> list[str]:
+    """Split a comma-separated option into words."""
+    return [w.strip() for w in str(text).split(",") if w.strip()]
 
 
 def _as_bool(value: Any) -> bool | None:

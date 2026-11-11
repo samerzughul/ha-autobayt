@@ -33,6 +33,7 @@ from .api import AutobaytAuthError, AutobaytClient, AutobaytConnectionError, Aut
 from .const import (
     CONF_ENERGY,
     CONF_HOST,
+    CONF_LIGHT_WORDS,
     CONF_LOCATION_ID,
     CONF_LOCATION_NAME,
     CONF_SCAN_INTERVAL,
@@ -42,6 +43,7 @@ from .const import (
     CONF_USER_ID,
     DEFAULT_ENERGY_TIMEZONE,
     DEFAULT_HOST,
+    DEFAULT_LIGHT_WORDS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     MAX_SCAN_INTERVAL,
@@ -220,6 +222,10 @@ class AutobaytOptionsFlow(OptionsFlowWithReload):
                 ),
                 vol.Optional(
                     CONF_SHUTTER_MODELS, default=options.get(CONF_SHUTTER_MODELS, "")
+                ): TextSelector(),
+                vol.Optional(
+                    CONF_LIGHT_WORDS,
+                    default=options.get(CONF_LIGHT_WORDS, DEFAULT_LIGHT_WORDS),
                 ): TextSelector(),
                 vol.Required(CONF_ENERGY, default=options.get(CONF_ENERGY, True)): bool,
                 vol.Required(

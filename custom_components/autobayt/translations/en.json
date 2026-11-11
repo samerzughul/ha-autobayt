@@ -56,13 +56,15 @@
           "scan_interval": "Refresh every",
           "shutter_models": "Shutter model names",
           "energy": "Energy sensors",
-          "energy_timezone": "Time zone for daily energy"
+          "energy_timezone": "Time zone for daily energy",
+          "light_words": "Words that mean a light"
         },
         "data_description": {
           "scan_interval": "How often to ask Autobayt for switch states, in seconds.",
           "shutter_models": "Comma-separated model names to treat as shutters, if a shutter shows up as switches.",
           "energy": "Show power and today's energy for power-metering (PM) devices.",
-          "energy_timezone": "IANA time zone that decides when the day starts, for example Asia/Amman."
+          "energy_timezone": "IANA time zone that decides when the day starts, for example Asia/Amman.",
+          "light_words": "A channel whose name contains one of these comma-separated words is shown as a light; the rest are switches. The light channel on a shutter plate is always a light."
         }
       }
     }

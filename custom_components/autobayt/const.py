@@ -20,6 +20,11 @@ CONF_SCAN_INTERVAL: Final = "scan_interval"
 CONF_SHUTTER_MODELS: Final = "shutter_models"
 CONF_ENERGY: Final = "energy"
 CONF_TIMEZONE: Final = "energy_timezone"
+CONF_LIGHT_WORDS: Final = "light_words"
+
+# A channel whose name contains one of these words is shown as a light;
+# other channels stay switches. Owners can change the list in the options.
+DEFAULT_LIGHT_WORDS: Final = "light, lamp, dim, spot, led, chandelier"
 
 DEFAULT_SCAN_INTERVAL: Final = 10  # seconds, the owner's explicit choice
 MIN_SCAN_INTERVAL: Final = 5

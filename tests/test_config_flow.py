@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.autobayt.const import (
     CONF_ENERGY,
+    CONF_LIGHT_WORDS,
     CONF_LOCATION_ID,
     CONF_SCAN_INTERVAL,
     CONF_SHUTTER_MODELS,
@@ -125,6 +126,7 @@ async def test_options(hass, setup_integration):
             CONF_SHUTTER_MODELS: "SW200LV1",
             CONF_ENERGY: False,
             CONF_TIMEZONE: "Asia/Amman",
+            CONF_LIGHT_WORDS: "light",
         },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY

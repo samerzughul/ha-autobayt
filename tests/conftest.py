@@ -161,12 +161,11 @@ class FakeAutobayt:
 
 def eid(hass, unique_id: str) -> str | None:
     """Return the entity id registered for a unique id."""
-    platform = (
-        "cover"
-        if unique_id.endswith("_shutter")
-        else ("sensor" if unique_id.endswith(("_power", "_energy_today")) else "switch")
-    )
-    return er.async_get(hass).async_get_entity_id(platform, DOMAIN, unique_id)
+    reg = er.async_get(hass)
+    for domain in ("cover", "sensor", "light", "switch"):
+        if entity_id := reg.async_get_entity_id(domain, DOMAIN, unique_id):
+            return entity_id
+    return None
 
 
 def state_of(hass, unique_id: str):

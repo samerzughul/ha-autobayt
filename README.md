@@ -2,7 +2,7 @@
 
 A Home Assistant integration for [Autobayt](https://autobayt.com) Wi-Fi wall switches and shutters, through the Autobayt cloud.
 
-- One **switch** per relay channel, grouped into one device per physical switch, with model, firmware and the room set in the Autobayt app.
+- One **light** per relay channel that drives a light (by its name, for example "Main Light" or "Dim") and one **switch** for anything else (for example a boiler), grouped into one device per physical switch, with model, firmware and the room set in the Autobayt app.
 - **Shutters** appear as cover entities showing their position (read-only for now, see below).
 - **Power and today's energy** for power-metering (PM) models and for the whole home.
 - Sign in with your Autobayt account once. Home Assistant keeps a sign-in token, not your password, and asks you to sign in again if Autobayt stops accepting it.
@@ -40,6 +40,7 @@ Open the integration and choose **Configure**.
 | --- | --- | --- |
 | Refresh every | 10 s | How often switch states are read from Autobayt for the whole home (one request per refresh). |
 | Shutter model names | empty | Comma-separated model names to treat as shutters, if a shutter shows up as switches. |
+| Words that mean a light | `light, lamp, dim, spot, led, chandelier` | A channel whose name contains one of these words is a light; the rest are switches. |
 | Energy sensors | on | Power and today's energy for PM devices and the home. |
 | Time zone for daily energy | `Asia/Amman` | Decides when "today" starts for the energy sensors. |
 
@@ -49,7 +50,7 @@ After you switch something, the integration checks again after about 2, 5 and 10
 
 | Entity | Unique id | Notes |
 | --- | --- | --- |
-| Switch per channel | `autobayt_<device id>_<channel>` | Unavailable when Autobayt reports the device offline. |
+| Light or switch per channel | `autobayt_<device id>_<channel>` | Unavailable when Autobayt reports the device offline. Keeps its unique id if it moves between light and switch. |
 | Shutter cover | `autobayt_<device id>_shutter` | Position 0 is closed, 100 is open. |
 | Device power (W) | `autobayt_<device id>_power` | PM models. Read every 3 minutes. |
 | Device energy today (kWh) | `autobayt_<device id>_energy_today` | PM models. Starts again at local midnight. |
@@ -59,7 +60,7 @@ Energy values Autobayt marks as missing, stale or incomplete show as unavailable
 
 ## Shutters
 
-Shutter controllers are recognised by their model name. On a shutter wall plate the first two channels drive the motor and are never shown as switches; any further channel (the light on the same plate) is an ordinary switch. They show the position Autobayt reports, but **cannot be opened, closed or stopped from Home Assistant yet**: Autobayt has not published a way to control shutters through its cloud, and driving a shutter's motor channels as two plain switches could run both directions at once. Control will be added when Autobayt provides it. Until then use the Autobayt app.
+Shutter controllers are recognised by their model name. On a shutter wall plate the first two channels drive the motor and are never shown as switches; any further channel is the plate's light, shown as a light named for example "Dim light". They show the position Autobayt reports, but **cannot be opened, closed or stopped from Home Assistant yet**: Autobayt has not published a way to control shutters through its cloud, and driving a shutter's motor channels as two plain switches could run both directions at once. Control will be added when Autobayt provides it. Until then use the Autobayt app.
 
 If a shutter shows up as two switches instead, add its model name (shown on the device page) under **Shutter model names**, and please open an issue with the model name so it can be recognised automatically.
 
