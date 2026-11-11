@@ -1,0 +1,80 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sign in to Autobayt",
+        "description": "Use the email and password of your Autobayt app account. Home Assistant keeps only the sign-in token, not your password.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "data": {
+              "host": "Server address"
+            },
+            "data_description": {
+              "host": "Only change this if Autobayt gave you a different server address."
+            }
+          }
+        }
+      },
+      "location": {
+        "title": "Choose a home",
+        "description": "Pick the Autobayt location to add. Add the integration again for another location.",
+        "data": {
+          "location_id": "Location"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in to Autobayt again",
+        "description": "Autobayt no longer accepts the saved sign-in for {location}. Enter your password again.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Wrong email or password.",
+      "cannot_connect": "Could not reach the Autobayt server.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This location is already added.",
+      "no_locations": "This Autobayt account has no locations.",
+      "reauth_successful": "Signed in again.",
+      "wrong_account": "That is a different Autobayt account than the one this location was added with."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Autobayt options",
+        "data": {
+          "scan_interval": "Refresh every",
+          "shutter_models": "Shutter model names",
+          "energy": "Energy sensors",
+          "energy_timezone": "Time zone for daily energy"
+        },
+        "data_description": {
+          "scan_interval": "How often to ask Autobayt for switch states, in seconds.",
+          "shutter_models": "Comma-separated model names to treat as shutters, if a shutter shows up as switches.",
+          "energy": "Show power and today's energy for power-metering (PM) devices.",
+          "energy_timezone": "IANA time zone that decides when the day starts, for example Asia/Amman."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "power": {
+        "name": "Power"
+      },
+      "energy_today": {
+        "name": "Energy today"
+      }
+    }
+  }
+}

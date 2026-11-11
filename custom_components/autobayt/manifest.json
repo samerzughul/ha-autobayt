@@ -1,0 +1,12 @@
+{
+  "domain": "autobayt",
+  "name": "Autobayt",
+  "codeowners": ["@samerzughul"],
+  "config_flow": true,
+  "documentation": "https://github.com/samerzughul/ha-autobayt",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/samerzughul/ha-autobayt/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
