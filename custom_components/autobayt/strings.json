@@ -93,14 +93,18 @@
           "shutter_models": "Shutter model names",
           "energy": "Energy sensors",
           "energy_timezone": "Time zone for daily energy",
-          "light_words": "Words that mean a light"
+          "light_words": "Words that mean a light",
+          "swap_shutter_direction": "Swap shutter up and down",
+          "shutter_travel_time": "Shutter travel time"
         },
         "data_description": {
           "scan_interval": "How often to ask Autobayt for switch states, in seconds.",
           "shutter_models": "Comma-separated model names to treat as shutters, if a shutter shows up as switches.",
           "energy": "Show power and today's energy for power-metering (PM) devices.",
           "energy_timezone": "IANA time zone that decides when the day starts, for example Asia/Amman. Defaults to the time zone of Home Assistant.",
-          "light_words": "A channel whose name contains one of these comma-separated words is shown as a light; the rest are switches. The light channel on a shutter plate is always a light."
+          "light_words": "A channel whose name contains one of these comma-separated words is shown as a light; the rest are switches. The light channel on a shutter plate is always a light.",
+          "swap_shutter_direction": "Turn on if Open moves your shutters down. By default button 1 on the plate drives the motor up and button 2 drives it down.",
+          "shutter_travel_time": "Seconds a shutter takes from fully closed to fully open. Leave empty if unsure. When set, shutters can be moved to a position and are stopped once they reach the end."
         }
       }
     },
@@ -147,8 +151,11 @@
     "command_failed": {
       "message": "Autobayt did not accept the command: {error}"
     },
-    "shutter_control_unavailable": {
-      "message": "Shutters cannot be controlled from Home Assistant yet: Autobayt has not published a way to control them. Use the Autobayt app."
+    "no_travel_time": {
+      "message": "Set the shutter travel time in the Autobayt options to move a shutter to a position."
+    },
+    "position_unknown": {
+      "message": "The shutter position is not known yet. Open or close it fully once, then try again."
     }
   }
 }

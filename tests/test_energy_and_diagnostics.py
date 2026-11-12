@@ -14,7 +14,6 @@ from custom_components.autobayt.api import (
     AutobaytConnectionError,
     AutobaytRateLimitError,
     AutobaytResponseError,
-    ShutterControlUnavailable,
 )
 from custom_components.autobayt.const import ENERGY_LIVE_INTERVAL
 from custom_components.autobayt.diagnostics import async_get_config_entry_diagnostics
@@ -81,12 +80,6 @@ async def test_client_rejects_mismatched_arrays(hass):
     client = AutobaytClient(async_get_clientsession(hass), "https://api.autobayt.com", TOKEN)
     with pytest.raises(ValueError):
         await client.set_buttons("sw-1", [0, 1], [True])
-
-
-async def test_shutter_control_not_available(hass):
-    client = AutobaytClient(async_get_clientsession(hass), "https://api.autobayt.com", TOKEN)
-    with pytest.raises(ShutterControlUnavailable):
-        await client.shutter_command("sh-1", "open")
 
 
 @pytest.mark.parametrize(

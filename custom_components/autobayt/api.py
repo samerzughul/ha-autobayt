@@ -41,10 +41,6 @@ class AutobaytResponseError(AutobaytError):
     """The backend answered with something unexpected."""
 
 
-class ShutterControlUnavailable(AutobaytError):
-    """Autobayt has not published a shutter control contract yet."""
-
-
 class AutobaytClient:
     """Talks to the Autobayt backend over HTTPS."""
 
@@ -206,22 +202,6 @@ class AutobaytClient:
         if not isinstance(body, dict):
             raise AutobaytResponseError("energy: expected an object")
         return body
-
-    # ------------------------------------------------------------------
-    # SHUTTER CONTROL - NOT WIRED YET
-    #
-    # The generic trigger endpoint only carries relay on/off states. It does
-    # not carry a target position or a stop command, and sending raw relay
-    # states to a shutter motor's two channels could drive both directions at
-    # once. Until Autobayt publishes a shutter control contract this method
-    # refuses, and the cover entity is read-only. Wire the real request here
-    # and flip SHUTTER_CONTROL_SUPPORTED in cover.py.
-    # ------------------------------------------------------------------
-    async def shutter_command(
-        self, device_id: str, action: str, position: int | None = None
-    ) -> None:
-        """Open, close, stop or move a shutter (not available yet)."""
-        raise ShutterControlUnavailable("Autobayt has not published a shutter control API yet")
 
 
 def _retry_after(headers: Mapping[str, str]) -> float | None:

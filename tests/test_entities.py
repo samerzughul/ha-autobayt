@@ -63,12 +63,13 @@ async def test_disconnected_device_unavailable(hass, setup_integration):
     assert state_of(hass, "autobayt_off-1_0").state == STATE_UNAVAILABLE
 
 
-async def test_shutter_is_read_only_cover(hass, setup_integration):
+async def test_shutter_cover(hass, setup_integration):
     state = state_of(hass, "autobayt_sh-1_shutter")
     assert state is not None
     assert state.attributes["current_position"] == 40
     assert state.state == "open"
-    assert state.attributes[ATTR_SUPPORTED_FEATURES] == 0
+    # Open, close and stop; no set-position without a travel time.
+    assert state.attributes[ATTR_SUPPORTED_FEATURES] == 11
     # Shutter channels are never exposed as switches.
     assert state_of(hass, "autobayt_sh-1_0") is None
     assert state_of(hass, "autobayt_sh-1_1") is None
@@ -308,21 +309,3 @@ async def test_shutter_reports_no_position(hass, fake, config_entry):
     state = state_of(hass, "autobayt_sh-1_shutter")
     assert state.state == "unknown"
     assert "current_position" not in state.attributes
-
-
-async def test_shutter_commands_refused_with_clear_error(hass, setup_integration, fake):
-    from custom_components.autobayt.cover import AutobaytShutter
-
-    coordinator = setup_integration.runtime_data.devices
-    cover = AutobaytShutter(coordinator, "sh-1")
-    for call in (
-        cover.async_open_cover(),
-        cover.async_close_cover(),
-        cover.async_stop_cover(),
-        cover.async_set_cover_position(position=50),
-    ):
-        with pytest.raises(HomeAssistantError) as err:
-            await call
-        assert err.value.translation_key == "shutter_control_unavailable"
-    # Nothing was sent to the motor channels.
-    assert fake.triggers == []

@@ -3,7 +3,7 @@
 A Home Assistant integration for [Autobayt](https://autobayt.com) Wi-Fi wall switches and shutters, through the Autobayt cloud.
 
 - One **light** per relay channel that drives a light (by its name, for example "Main Light" or "Dim") and one **switch** for anything else (for example a boiler), grouped into one device per physical switch, with model, firmware and the room set in the Autobayt app.
-- **Shutters** appear as cover entities that show their position only. They **cannot be opened, closed or stopped from Home Assistant** until Autobayt provides a way to do it; see [Shutters](#shutters).
+- **Shutters** can be opened, closed and stopped, and moved to a position once you set their travel time; see [Shutters](#shutters).
 - **Power and today's energy** for power-metering (PM) models and for the whole home.
 - Sign in with your Autobayt account once. Home Assistant keeps a sign-in token, not your password, and asks you to sign in again if Autobayt stops accepting it.
 - No firmware updates or other device administration: pair and update devices in the Autobayt app.
@@ -43,6 +43,8 @@ Open the integration and choose **Configure**.
 | Refresh every | 10 s | How often switch states are read from Autobayt for the whole home (one request per refresh). |
 | Shutter model names | empty | Comma-separated model names to treat as shutters, if a shutter shows up as switches. |
 | Words that mean a light | `light, lamp, dim, spot, led, chandelier` | A channel whose name contains one of these words is a light; the rest are switches. |
+| Swap shutter up and down | off | Turn on if **Open** moves your shutters down. |
+| Shutter travel time | empty | Seconds from fully closed to fully open. When set, shutters can be moved to a position and are stopped at the end of their travel. |
 | Energy sensors | on | Power and today's energy for PM devices and the home. |
 | Time zone for daily energy | Home Assistant's time zone | Decides when "today" starts for the energy sensors, for example `Asia/Amman`. |
 
@@ -53,7 +55,7 @@ After you switch something, the integration checks again after about 2, 5 and 10
 | Entity | Unique id | Notes |
 | --- | --- | --- |
 | Light or switch per channel | `autobayt_<device id>_<channel>` | Named after the channel in the Autobayt app, and renamed when you rename it there (unless you named it in Home Assistant). Unavailable when Autobayt reports the device offline. Keeps its unique id if it moves between light and switch. |
-| Shutter cover | `autobayt_<device id>_shutter` | Position only: 0 is closed, 100 is open. No controls. |
+| Shutter cover | `autobayt_<device id>_shutter` | Open, close, stop; set position with a travel time. 0 is closed, 100 is open. |
 | Device power (W) | `autobayt_<device id>_power` | PM models. Read every 3 minutes. |
 | Device energy today (kWh) | `autobayt_<device id>_energy_today` | PM models. Starts again at local midnight. |
 | Home power, energy today | `autobayt_<location id>_power`, `..._energy_today` | On a "home" device. |
@@ -62,13 +64,25 @@ Energy values Autobayt marks as missing, stale or incomplete show as unavailable
 
 ## Shutters
 
-**Shutters are read-only.** Home Assistant shows each shutter and the position Autobayt reports, but it cannot open, close, stop or move them. Use the Autobayt app for that.
+An Autobayt shutter plate has two buttons for the motor: one runs it up, the other runs it down. Home Assistant drives the shutter by switching those two channels with the same command the Autobayt app uses for any button, with these safeguards:
 
-Why: Autobayt's documented command only switches channels on and off. It has no way to say "open", "close", "stop" or "go to 40%", and a shutter's two motor channels (up and down) must never be switched like ordinary relays, because both could end up on at once. This integration does not guess at undocumented commands. Control will be added once Autobayt publishes a shutter command.
+- **Open** switches the down channel off and the up channel on in one request; **Close** does the opposite. Up and down are never on together.
+- **Stop** switches both channels off.
+- **Reversing while the shutter moves** stops it first, waits a second, then starts the other way.
 
-Shutter controllers are recognised by their model name. On a shutter wall plate the first two channels drive the motor and are never shown as switches; any further channel is the plate's light, shown as a light named for example "Dim light", and that light can be switched normally.
+By default button 1 runs the motor up and button 2 runs it down. If **Open** moves your shutters down, turn on **Swap shutter up and down**.
 
-If a shutter shows up as two switches instead, add its model name (shown on the device page) under **Shutter model names**, and please open an issue with the model name so it can be recognised automatically.
+**Position:**
+
+- If Autobayt reports a position, it is shown.
+- With a **Shutter travel time** set, Home Assistant also works out the position from how long the motor ran. It can move a shutter to a position by running it for the right time and then stopping, and it stops a full open or close once the travel time (plus 10%) has passed. Time one shutter from fully closed to fully open to find the value. A partial move needs a known position, so after a restart open or close the shutter fully once.
+- With no travel time and no reported position, the shutter offers open, close and stop only. Its state is a guess, and it is up to the motor's own end stops to stop it.
+
+A move started from the Autobayt app or the wall shows as opening or closing in Home Assistant too, as soon as Autobayt reports it.
+
+On a shutter wall plate the motor channels are never shown as switches. Any further channel is the plate's light, shown as a light named for example "Dim light".
+
+Shutter controllers are recognised by their model name. If a shutter shows up as switches instead, add its model name (shown on the device page) under **Shutter model names**, and please open an issue with the model name so it can be recognised automatically.
 
 ## Devices that are added or removed
 
@@ -76,7 +90,7 @@ New devices added in the Autobayt app appear on the next refresh. A device that 
 
 ## Known limitations
 
-- Shutters are read-only (see above).
+- Shutter positions are estimated from timing unless Autobayt reports them, so they drift if a shutter is also moved by hand; a full open or close puts them right again. The travel time applies to all shutters of a home.
 - Lights are on/off only; the integration does not dim.
 - Everything goes through the Autobayt cloud, so nothing works while the home's internet or Autobayt's servers are down.
 - States are read every 10 seconds by default, so a change made with a wall switch or the Autobayt app can take up to that long to show.

@@ -239,3 +239,31 @@ async def test_energy_timezone_defaults_to_home_assistant(hass, setup_integratio
 
     await hass.config.async_update(time_zone="Europe/Berlin")
     assert energy_timezone(hass, setup_integration) == "Europe/Berlin"
+
+
+async def test_options_shutter_settings(hass, setup_integration):
+    from custom_components.autobayt.const import CONF_SWAP_DIRECTION, CONF_TRAVEL_TIME
+
+    entry = setup_integration
+    base = {
+        CONF_SCAN_INTERVAL: 10,
+        CONF_SHUTTER_MODELS: "",
+        CONF_ENERGY: True,
+        CONF_TIMEZONE: "Asia/Amman",
+        CONF_LIGHT_WORDS: "light",
+    }
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**base, CONF_SWAP_DIRECTION: True, CONF_TRAVEL_TIME: 22.5}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.options[CONF_SWAP_DIRECTION] is True
+    assert entry.options[CONF_TRAVEL_TIME] == 22.5
+    # Clearing the travel time removes it.
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**base, CONF_SWAP_DIRECTION: False}
+    )
+    await hass.async_block_till_done()
+    assert CONF_TRAVEL_TIME not in entry.options

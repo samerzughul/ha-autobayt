@@ -21,6 +21,8 @@ CONF_SHUTTER_MODELS: Final = "shutter_models"
 CONF_ENERGY: Final = "energy"
 CONF_TIMEZONE: Final = "energy_timezone"
 CONF_LIGHT_WORDS: Final = "light_words"
+CONF_SWAP_DIRECTION: Final = "swap_shutter_direction"
+CONF_TRAVEL_TIME: Final = "shutter_travel_time"
 
 # A channel whose name contains one of these words is shown as a light;
 # other channels stay switches. Owners can change the list in the options.
@@ -51,3 +53,15 @@ COMMAND_REFRESH_DELAYS: Final = (2, 5, 10)
 COMMAND_PENDING_TIMEOUT: Final = 15
 
 REQUEST_TIMEOUT: Final = 15
+
+# Shutters: by default channel 0 drives the motor up (open) and channel 1
+# drives it down (close). The "swap" option exchanges them.
+SHUTTER_UP_CHANNEL: Final = 0
+SHUTTER_DOWN_CHANNEL: Final = 1
+# Pause between stopping and starting the other way, so the motor never
+# reverses while it is still turning.
+SHUTTER_REVERSE_PAUSE: Final = 1.0
+# A full open or close keeps its channel on this much longer than the travel
+# time, so the shutter surely reaches its end before the stop is sent.
+SHUTTER_END_MARGIN: Final = 1.1
+MAX_TRAVEL_TIME: Final = 300

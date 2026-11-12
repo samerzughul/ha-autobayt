@@ -208,15 +208,23 @@ class AutobaytDeviceCoordinator(DataUpdateCoordinator[dict[str, AutobaytDevice]]
 
     async def async_set_button(self, device_id: str, button_id: int, state: bool) -> None:
         """Send one relay command and watch for the reported state."""
+        await self.async_set_buttons(device_id, {button_id: state})
+
+    async def async_set_buttons(self, device_id: str, states: dict[int, bool]) -> None:
+        """Switch several channels of one device in a single request.
+
+        The channels go out in the order given, so a caller can put the
+        channel it switches off first. The new states are shown at once and
+        confirmed by follow-up refreshes.
+        """
         try:
-            await self.client.set_buttons(device_id, [button_id], [state])
+            await self.client.set_buttons(device_id, list(states), list(states.values()))
         except AutobaytAuthError:
             self.config_entry.async_start_reauth(self.hass)
             raise
-        self._pending[(device_id, button_id)] = (
-            state,
-            time.monotonic() + COMMAND_PENDING_TIMEOUT,
-        )
+        deadline = time.monotonic() + COMMAND_PENDING_TIMEOUT
+        for button_id, state in states.items():
+            self._pending[(device_id, button_id)] = (state, deadline)
         self.async_update_listeners()
         self._schedule_followups()
 

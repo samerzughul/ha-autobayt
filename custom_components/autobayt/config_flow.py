@@ -39,14 +39,17 @@ from .const import (
     CONF_LOCATION_NAME,
     CONF_SCAN_INTERVAL,
     CONF_SHUTTER_MODELS,
+    CONF_SWAP_DIRECTION,
     CONF_TIMEZONE,
     CONF_TOKEN,
+    CONF_TRAVEL_TIME,
     CONF_USER_ID,
     DEFAULT_HOST,
     DEFAULT_LIGHT_WORDS,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     MAX_SCAN_INTERVAL,
+    MAX_TRAVEL_TIME,
     MIN_SCAN_INTERVAL,
 )
 from .coordinator import energy_timezone
@@ -237,6 +240,8 @@ class AutobaytOptionsFlow(OptionsFlowWithReload):
         errors: dict[str, str] = {}
         if user_input is not None:
             user_input[CONF_SCAN_INTERVAL] = int(user_input[CONF_SCAN_INTERVAL])
+            if user_input.get(CONF_TRAVEL_TIME) in (None, "", 0):
+                user_input.pop(CONF_TRAVEL_TIME, None)
             timezone = str(user_input.get(CONF_TIMEZONE, "")).strip()
             user_input[CONF_TIMEZONE] = timezone
             if dt_util.get_time_zone(timezone) is None:
@@ -261,6 +266,21 @@ class AutobaytOptionsFlow(OptionsFlowWithReload):
                 vol.Optional(
                     CONF_SHUTTER_MODELS, default=options.get(CONF_SHUTTER_MODELS, "")
                 ): TextSelector(),
+                vol.Required(
+                    CONF_SWAP_DIRECTION, default=options.get(CONF_SWAP_DIRECTION, False)
+                ): bool,
+                vol.Optional(
+                    CONF_TRAVEL_TIME,
+                    description={"suggested_value": options.get(CONF_TRAVEL_TIME)},
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=1,
+                        max=MAX_TRAVEL_TIME,
+                        step=0.5,
+                        unit_of_measurement="s",
+                        mode=NumberSelectorMode.BOX,
+                    )
+                ),
                 vol.Optional(
                     CONF_LIGHT_WORDS,
                     default=options.get(CONF_LIGHT_WORDS, DEFAULT_LIGHT_WORDS),
