@@ -127,11 +127,18 @@ async def test_backoff_on_server_errors(hass, setup_integration, fake, freezer):
     coordinator = setup_integration.runtime_data.devices
     fake.get_things_status = 503
     await _tick(hass, freezer, 10)
-    assert state_of(hass, "autobayt_sw-1_0").state == STATE_UNAVAILABLE
+    # One dropped request keeps the last known states.
+    assert state_of(hass, "autobayt_sw-1_0").state == STATE_ON
     assert coordinator.update_interval == timedelta(seconds=20)
     fake.get_things_status = 429
     await _tick(hass, freezer, 20)
+    assert state_of(hass, "autobayt_sw-1_0").state == STATE_ON
     assert coordinator.update_interval >= timedelta(seconds=40)
+    fake.get_things_status = 503
+    await _tick(hass, freezer, coordinator.update_interval.total_seconds())
+    # Three failures in a row: Autobayt is really down.
+    assert state_of(hass, "autobayt_sw-1_0").state == STATE_UNAVAILABLE
+    assert coordinator.update_interval <= timedelta(minutes=5)
     fake.get_things_status = 200
     await _tick(hass, freezer, coordinator.update_interval.total_seconds())
     assert coordinator.update_interval == timedelta(seconds=10)
@@ -204,3 +211,118 @@ async def test_channel_moving_platform_leaves_no_stale_entity(hass, fake, config
     await hass.async_block_till_done()
     assert ent_reg.async_get(old.entity_id) is None
     assert eid(hass, "autobayt_sw-1_0").startswith("light.")
+
+
+async def test_command_error_is_translated(hass, setup_integration, aioclient_mock, fake):
+    aioclient_mock.clear_requests()
+    aioclient_mock.post("https://api.autobayt.com/v1/device/trigger", status=400)
+    with pytest.raises(HomeAssistantError) as err:
+        await hass.services.async_call(
+            "switch", "turn_on", {ATTR_ENTITY_ID: eid(hass, "autobayt_pm-1_0")}, blocking=True
+        )
+    assert err.value.translation_key == "command_failed"
+    assert err.value.translation_domain == DOMAIN
+
+
+async def test_command_401_starts_reauth(hass, setup_integration, aioclient_mock, fake):
+    aioclient_mock.clear_requests()
+    aioclient_mock.post("https://api.autobayt.com/v1/device/trigger", status=401)
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            "switch", "turn_on", {ATTR_ENTITY_ID: eid(hass, "autobayt_pm-1_0")}, blocking=True
+        )
+    await hass.async_block_till_done()
+    flows = hass.config_entries.flow.async_progress()
+    assert any(f["context"]["source"] == SOURCE_REAUTH for f in flows)
+
+
+async def test_made_up_names_are_translated(hass, fake, config_entry):
+    fake.devices[0]["buttons"][1]["name"] = ""  # unnamed second channel
+    fake.devices[3]["buttons"][2]["name"] = "Button 3"  # generic plate light
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert state_of(hass, "autobayt_sw-1_1").attributes["friendly_name"].endswith("Channel 2")
+    plate = state_of(hass, "autobayt_sh-1_2").attributes["friendly_name"]
+    assert plate == "Living room shutter Light"
+
+
+async def test_channel_follows_rename_in_app(hass, setup_integration, fake, freezer):
+    fake.devices[0]["buttons"][0]["name"] = "Chandelier"
+    await _tick(hass, freezer, 10)
+    assert state_of(hass, "autobayt_sw-1_0").attributes["friendly_name"].endswith("Chandelier")
+    fake.devices[0]["buttons"][0]["name"] = ""
+    await _tick(hass, freezer, 10)
+    assert state_of(hass, "autobayt_sw-1_0").attributes["friendly_name"].endswith("Channel 1")
+    fake.devices[0]["buttons"][0]["name"] = "Ceiling light"
+    await _tick(hass, freezer, 10)
+    assert state_of(hass, "autobayt_sw-1_0").attributes["friendly_name"].endswith("Ceiling light")
+
+
+async def test_device_gone_from_autobayt_is_removed(hass, setup_integration, fake, freezer):
+    dev_reg = dr.async_get(hass)
+    entry_id = setup_integration.entry_id
+    fake.devices = [d for d in fake.devices if d["device_id"] != "off-1"]
+    await _tick(hass, freezer, 10)
+    await _tick(hass, freezer, 10)
+    # Kept through short gaps in the list.
+    assert dev_reg.async_get_device_by_identifier((DOMAIN, "off-1"), entry_id) is not None
+    await _tick(hass, freezer, 10)
+    assert dev_reg.async_get_device_by_identifier((DOMAIN, "off-1"), entry_id) is None
+    # Other devices and the home device stay.
+    assert dev_reg.async_get_device_by_identifier((DOMAIN, "sw-1"), entry_id) is not None
+    assert any(
+        ident[1].startswith("location_")
+        for d in dr.async_entries_for_config_entry(dev_reg, entry_id)
+        for ident in d.identifiers
+    )
+
+
+async def test_empty_device_list_removes_nothing(hass, setup_integration, fake, freezer):
+    dev_reg = dr.async_get(hass)
+    entry_id = setup_integration.entry_id
+    fake.devices = []
+    for _ in range(4):
+        await _tick(hass, freezer, 10)
+    assert dev_reg.async_get_device_by_identifier((DOMAIN, "sw-1"), entry_id) is not None
+
+
+async def test_manual_device_removal_only_when_gone(hass, setup_integration):
+    from custom_components.autobayt import async_remove_config_entry_device
+
+    dev_reg = dr.async_get(hass)
+    entry_id = setup_integration.entry_id
+    known = dev_reg.async_get_device_by_identifier((DOMAIN, "sw-1"), entry_id)
+    assert not await async_remove_config_entry_device(hass, setup_integration, known)
+    gone = dev_reg.async_get_or_create(
+        config_entry_id=setup_integration.entry_id, identifiers={(DOMAIN, "old-1")}
+    )
+    assert await async_remove_config_entry_device(hass, setup_integration, gone)
+
+
+async def test_shutter_reports_no_position(hass, fake, config_entry):
+    del fake.devices[3]["perc"]
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    state = state_of(hass, "autobayt_sh-1_shutter")
+    assert state.state == "unknown"
+    assert "current_position" not in state.attributes
+
+
+async def test_shutter_commands_refused_with_clear_error(hass, setup_integration, fake):
+    from custom_components.autobayt.cover import AutobaytShutter
+
+    coordinator = setup_integration.runtime_data.devices
+    cover = AutobaytShutter(coordinator, "sh-1")
+    for call in (
+        cover.async_open_cover(),
+        cover.async_close_cover(),
+        cover.async_stop_cover(),
+        cover.async_set_cover_position(position=50),
+    ):
+        with pytest.raises(HomeAssistantError) as err:
+            await call
+        assert err.value.translation_key == "shutter_control_unavailable"
+    # Nothing was sent to the motor channels.
+    assert fake.triggers == []

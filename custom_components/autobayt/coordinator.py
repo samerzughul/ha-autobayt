@@ -11,6 +11,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -37,7 +38,9 @@ from .const import (
     DOMAIN,
     ENERGY_LIVE_INTERVAL,
     ENERGY_PERIOD_INTERVAL,
+    FAILURES_BEFORE_UNAVAILABLE,
     MAX_BACKOFF_INTERVAL,
+    MISSING_POLLS_BEFORE_REMOVAL,
 )
 from .models import AutobaytDevice, parse_device, split_words
 
@@ -64,6 +67,15 @@ def shutter_models(entry: ConfigEntry) -> list[str]:
 def light_words(entry: ConfigEntry) -> list[str]:
     """Return the words that mark a channel as a light."""
     return split_words(entry.options.get(CONF_LIGHT_WORDS, DEFAULT_LIGHT_WORDS))
+
+
+def _auth_failed() -> ConfigEntryAuthFailed:
+    return ConfigEntryAuthFailed(translation_domain=DOMAIN, translation_key="auth_failed")
+
+
+def energy_timezone(hass: HomeAssistant, entry: ConfigEntry) -> str:
+    """Return the time zone that decides when the energy day starts."""
+    return entry.options.get(CONF_TIMEZONE) or hass.config.time_zone or DEFAULT_ENERGY_TIMEZONE
 
 
 def _backoff(base: timedelta, failures: int, retry_after: float | None) -> timedelta:
@@ -95,21 +107,35 @@ class AutobaytDeviceCoordinator(DataUpdateCoordinator[dict[str, AutobaytDevice]]
         self._location_id: str = entry.data[CONF_LOCATION_ID]
         self._shutter_models = shutter_models(entry)
         self._failures = 0
+        self._missing: dict[str, int] = {}
         # (device_id, button_id) -> (wanted state, deadline as monotonic time)
         self._pending: dict[tuple[str, int], tuple[bool, float]] = {}
         self._followups: list[CALLBACK_TYPE] = []
+
+    @property
+    def failures(self) -> int:
+        """Return how many refreshes in a row have failed."""
+        return self._failures
 
     async def _async_update_data(self) -> dict[str, AutobaytDevice]:
         try:
             raw = await self.client.get_things(self._user_id, self._location_id)
         except AutobaytAuthError as err:
-            raise ConfigEntryAuthFailed("Autobayt rejected the saved login") from err
-        except AutobaytRateLimitError as err:
-            self._slow_down(err.retry_after)
-            raise UpdateFailed("Autobayt asked to slow down") from err
+            raise _auth_failed() from err
         except AutobaytError as err:
-            self._slow_down(None)
-            raise UpdateFailed(f"Autobayt request failed: {err}") from err
+            retry_after = err.retry_after if isinstance(err, AutobaytRateLimitError) else None
+            self._slow_down(retry_after)
+            # A cloud service drops the odd request. Keep showing the last
+            # known states through a short blip instead of flashing every
+            # entity unavailable; after a few failures in a row, give up.
+            if self.data is not None and self._failures < FAILURES_BEFORE_UNAVAILABLE:
+                _LOGGER.debug("Autobayt refresh failed (%s), keeping the last states", err)
+                return self.data
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="update_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
 
         if self._failures:
             self._failures = 0
@@ -120,7 +146,33 @@ class AutobaytDeviceCoordinator(DataUpdateCoordinator[dict[str, AutobaytDevice]]
             device = parse_device(item, self._shutter_models)
             devices[device.device_id] = device
         self._settle_pending(devices)
+        if devices:
+            self._remove_stale_devices(devices)
         return devices
+
+    def _remove_stale_devices(self, devices: dict[str, AutobaytDevice]) -> None:
+        """Remove devices Autobayt has stopped reporting for several polls.
+
+        Waiting a few polls keeps a device that briefly drops out of the list
+        (and its entity settings) from being removed.
+        """
+        dev_reg = dr.async_get(self.hass)
+        for entry in dr.async_entries_for_config_entry(dev_reg, self.config_entry.entry_id):
+            device_id = next(
+                (ident for domain, ident in entry.identifiers if domain == DOMAIN), None
+            )
+            if device_id is None or device_id.startswith("location_"):
+                continue
+            if device_id in devices:
+                self._missing.pop(device_id, None)
+                continue
+            self._missing[device_id] = self._missing.get(device_id, 0) + 1
+            if self._missing[device_id] >= MISSING_POLLS_BEFORE_REMOVAL:
+                _LOGGER.debug("Removing a device Autobayt no longer reports")
+                dev_reg.async_update_device(
+                    entry.id, remove_config_entry_id=self.config_entry.entry_id
+                )
+                self._missing.pop(device_id, None)
 
     def _slow_down(self, retry_after: float | None) -> None:
         self._failures += 1
@@ -208,7 +260,7 @@ class AutobaytEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.client = client
         self._location_id: str = entry.data[CONF_LOCATION_ID]
-        self._timezone: str = entry.options.get(CONF_TIMEZONE, DEFAULT_ENERGY_TIMEZONE)
+        self._timezone: str = energy_timezone(hass, entry)
         self._period: dict[str, Any] | None = None
         self._period_fetched: float = 0.0
         self._period_date: str | None = None
@@ -228,12 +280,16 @@ class AutobaytEnergyCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._period_fetched = time.monotonic()
                 self._period_date = today
         except AutobaytAuthError as err:
-            raise ConfigEntryAuthFailed("Autobayt rejected the saved login") from err
+            raise _auth_failed() from err
         except AutobaytError as err:
             self._failures += 1
             retry = err.retry_after if isinstance(err, AutobaytRateLimitError) else None
             self.update_interval = _backoff(ENERGY_LIVE_INTERVAL, self._failures, retry)
-            raise UpdateFailed(f"Autobayt energy request failed: {err}") from err
+            raise UpdateFailed(
+                translation_domain=DOMAIN,
+                translation_key="energy_update_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
 
         if self._failures:
             self._failures = 0

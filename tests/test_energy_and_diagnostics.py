@@ -5,11 +5,20 @@ from __future__ import annotations
 import json
 import re
 
+import aiohttp
 import pytest
 
-from custom_components.autobayt.api import AutobaytClient, ShutterControlUnavailable
+from custom_components.autobayt.api import (
+    AutobaytAuthError,
+    AutobaytClient,
+    AutobaytConnectionError,
+    AutobaytRateLimitError,
+    AutobaytResponseError,
+    ShutterControlUnavailable,
+)
+from custom_components.autobayt.const import ENERGY_LIVE_INTERVAL
 from custom_components.autobayt.diagnostics import async_get_config_entry_diagnostics
-from custom_components.autobayt.models import is_shutter
+from custom_components.autobayt.models import is_shutter, parse_device, public_fields
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -92,3 +101,112 @@ async def test_shutter_control_not_available(hass):
 )
 def test_shutter_detection(raw, extra, expected):
     assert is_shutter(raw, extra) is expected
+
+
+async def test_diagnostics_hide_camel_case_and_embedded_ids(hass, fake, config_entry):
+    fake.devices[0]["deviceId"] = "sw-1"
+    fake.devices[0]["macAddress"] = "aa:bb:cc:dd:ee:ff"
+    fake.devices[0]["ipAddress"] = "10.0.0.5"
+    fake.devices[0]["topic"] = "things/sw-1/state"
+    fake.devices[0]["note"] = f"belongs to {USER_ID} at {LOC_ID}"
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    text = json.dumps(await async_get_config_entry_diagnostics(hass, config_entry))
+    for secret in ("sw-1", "aa:bb:cc", "10.0.0.5", USER_ID, LOC_ID, TOKEN):
+        assert secret not in text
+    assert "SW200LV1" in text  # model names stay, they help with support
+
+
+def test_public_fields_keeps_harmless_values():
+    raw = {"model_name": "SW1", "buttons": [{"button_id": 0, "name": "Lamp"}], "perc": 3}
+    assert public_fields(raw, ["xyz-device"]) == raw
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "error"),
+    [
+        (403, None, AutobaytAuthError),
+        (429, None, AutobaytRateLimitError),
+        (503, None, AutobaytConnectionError),
+        (404, {"error": "x"}, AutobaytResponseError),
+        (200, {"not": "a list"}, AutobaytResponseError),
+    ],
+)
+async def test_client_maps_errors(hass, aioclient_mock, status, body, error):
+    aioclient_mock.get(re.compile(r".*/v1/user/get-things.*"), status=status, json=body)
+    client = AutobaytClient(async_get_clientsession(hass), "https://api.autobayt.com", TOKEN)
+    with pytest.raises(error):
+        await client.get_things(USER_ID, LOC_ID)
+
+
+async def test_client_timeout_and_network_errors(hass, aioclient_mock):
+    client = AutobaytClient(async_get_clientsession(hass), "https://api.autobayt.com", TOKEN)
+    aioclient_mock.get(re.compile(r".*/v1/device\?.*"), exc=TimeoutError())
+    with pytest.raises(AutobaytConnectionError):
+        await client.get_device("sw-1")
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(re.compile(r".*/v1/device\?.*"), exc=aiohttp.ClientConnectionError())
+    with pytest.raises(AutobaytConnectionError):
+        await client.get_device("sw-1")
+
+
+async def test_client_rate_limit_hint(hass, aioclient_mock):
+    aioclient_mock.get(
+        re.compile(r".*/v1/user/energy/live.*"), status=429, headers={"Retry-After": "12"}
+    )
+    client = AutobaytClient(async_get_clientsession(hass), "https://api.autobayt.com", TOKEN)
+    with pytest.raises(AutobaytRateLimitError) as err:
+        await client.get_energy_live(LOC_ID)
+    assert err.value.retry_after == 12
+
+
+async def test_energy_backs_off_and_recovers(hass, setup_integration, fake, aioclient_mock):
+    energy = setup_integration.runtime_data.energy
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(re.compile(r".*/v1/user/energy.*"), status=503)
+    fake.register(aioclient_mock)
+    await energy.async_refresh()
+    assert not energy.last_update_success
+    assert energy.update_interval > ENERGY_LIVE_INTERVAL
+    aioclient_mock.clear_requests()
+    fake.register(aioclient_mock)
+    await energy.async_refresh()
+    assert energy.last_update_success
+    assert energy.update_interval == ENERGY_LIVE_INTERVAL
+
+
+def test_parse_device_tolerates_odd_fields():
+    device = parse_device(
+        {
+            "device_id": 7,
+            "model_name": "SH300V1",
+            "type": None,
+            "buttons": [
+                "junk",
+                {"name": "no id"},
+                {"button_id": "x"},
+                {"button_id": "0", "switch_state": "on"},
+                {"button_id": 1, "switch_state": 0},
+                {"button_id": 2, "switch_state": "maybe", "perc": "250"},
+            ],
+        }
+    )
+    assert device.device_id == "7"
+    assert device.name == "SH300V1"
+    assert device.is_shutter
+    assert device.position == 100  # read from the channel, clamped
+    assert device.buttons[0].is_on is True
+    assert device.buttons[1].is_on is False
+    assert device.buttons[2].is_on is None
+    assert device.relay_channels() == [2]
+
+
+@pytest.mark.parametrize("perc", [None, True, "n/a", [1]])
+def test_shutter_without_usable_position(perc):
+    device = parse_device({"device_id": "s", "model_name": "SH300V1", "perc": perc})
+    assert device.position is None
+
+
+def test_shutter_detected_by_type_field():
+    assert is_shutter({"model_name": "X1", "device_type": "Roller blind"})

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 from custom_components.autobayt.const import (
     CONF_ENERGY,
+    CONF_HOST,
     CONF_LIGHT_WORDS,
     CONF_LOCATION_ID,
     CONF_SCAN_INTERVAL,
@@ -107,7 +110,9 @@ async def test_reauth_stores_new_token(hass, fake, config_entry):
 async def test_reauth_other_account_refused(hass, fake, config_entry):
     config_entry.add_to_hass(hass)
     hass.config_entries.async_update_entry(
-        config_entry, data={**config_entry.data, CONF_USER_ID: "f" * 24}
+        config_entry,
+        data={**config_entry.data, CONF_USER_ID: "f" * 24},
+        unique_id=f"{'f' * 24}_{LOC_ID}",
     )
     result = await config_entry.start_reauth_flow(hass)
     result = await hass.config_entries.flow.async_configure(result["flow_id"], CREDS)
@@ -138,3 +143,99 @@ async def test_options(hass, setup_integration):
     assert old is None or old.state == "unavailable"
     assert state_of(hass, "autobayt_sw-1_shutter") is not None
     assert entry.runtime_data.energy is None
+
+
+async def test_reconfigure_updates_token_and_host(hass, fake, config_entry, aioclient_mock):
+    other = "https://eu.example.test"
+    fake.register(aioclient_mock, other)
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, data={**config_entry.data, CONF_TOKEN: "old"}
+    )
+    result = await config_entry.start_reconfigure_flow(hass)
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reconfigure"
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {**CREDS, "advanced": {"host": other + "/"}}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert config_entry.data[CONF_TOKEN] == TOKEN
+    assert config_entry.data[CONF_HOST] == other
+
+
+async def test_reconfigure_other_account_refused(hass, fake, config_entry):
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(config_entry, unique_id=f"{'f' * 24}_{LOC_ID}")
+    result = await config_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], SETUP)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "wrong_account"
+
+
+async def test_reconfigure_location_gone(hass, fake, config_entry):
+    config_entry.add_to_hass(hass)
+    fake.locations = [{"_id": OTHER_LOC_ID, "name": "Farm", "user_id": USER_ID}]
+    result = await config_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], SETUP)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "location_missing"
+
+
+async def test_reconfigure_wrong_password_shows_error(hass, fake, config_entry):
+    config_entry.add_to_hass(hass)
+    fake.login_error_code = 111
+    result = await config_entry.start_reconfigure_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], SETUP)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_auth"}
+
+
+async def test_reauth_wrong_password_shows_error(hass, fake, config_entry):
+    config_entry.add_to_hass(hass)
+    fake.login_error_code = 112
+    result = await config_entry.start_reauth_flow(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], CREDS)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_auth"}
+
+
+async def test_unexpected_login_body(hass, aioclient_mock):
+    aioclient_mock.post("https://api.autobayt.com/v1/user/login", json={"token": "x"})
+    result = await _start(hass)
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], SETUP)
+    assert result["errors"] == {"base": "unknown"}
+
+
+async def test_unexpected_exception(hass, fake):
+    with patch(
+        "custom_components.autobayt.config_flow.AutobaytClient.login",
+        side_effect=RuntimeError("boom"),
+    ):
+        result = await _start(hass)
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], SETUP)
+    assert result["errors"] == {"base": "unknown"}
+
+
+async def test_options_reject_unknown_timezone(hass, setup_integration):
+    entry = setup_integration
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_SCAN_INTERVAL: 10,
+            CONF_SHUTTER_MODELS: "",
+            CONF_ENERGY: True,
+            CONF_TIMEZONE: "Mars/Olympus",
+            CONF_LIGHT_WORDS: "light",
+        },
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_TIMEZONE: "invalid_timezone"}
+
+
+async def test_energy_timezone_defaults_to_home_assistant(hass, setup_integration):
+    from custom_components.autobayt.coordinator import energy_timezone
+
+    await hass.config.async_update(time_zone="Europe/Berlin")
+    assert energy_timezone(hass, setup_integration) == "Europe/Berlin"

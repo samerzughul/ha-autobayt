@@ -27,11 +27,18 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return redacted diagnostics. Devices are numbered instead of named by id."""
     runtime = entry.runtime_data
+    known = runtime.devices.data or {}
+    secrets = [
+        *known,
+        str(entry.data.get(CONF_USER_ID) or ""),
+        str(entry.data.get(CONF_LOCATION_ID) or ""),
+        str(entry.data.get(CONF_TOKEN) or ""),
+    ]
     devices = []
-    for index, device in enumerate((runtime.devices.data or {}).values(), start=1):
+    for index, device in enumerate(known.values(), start=1):
         item = asdict(device)
         item["device_id"] = f"device_{index}"
-        item["raw"] = public_fields(device.raw)
+        item["raw"] = public_fields(device.raw, secrets)
         devices.append(item)
 
     energy: dict[str, Any] | None = None
@@ -50,6 +57,7 @@ async def async_get_config_entry_diagnostics(
         },
         "last_update_success": runtime.devices.last_update_success,
         "update_interval": str(runtime.devices.update_interval),
+        "consecutive_failures": runtime.devices.failures,
         "devices": devices,
         "energy": energy,
     }

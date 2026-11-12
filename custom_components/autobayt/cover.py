@@ -22,7 +22,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .api import AutobaytError
+from .api import AutobaytError, ShutterControlUnavailable
 from .const import DOMAIN
 from .coordinator import AutobaytConfigEntry, AutobaytDeviceCoordinator
 from .entity import AutobaytEntity
@@ -106,6 +106,14 @@ class AutobaytShutter(AutobaytEntity, CoverEntity):
     async def _async_command(self, action: str, position: int | None = None) -> None:
         try:
             await self.coordinator.client.shutter_command(self._device_id, action, position)
+        except ShutterControlUnavailable as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="shutter_control_unavailable"
+            ) from err
         except AutobaytError as err:
-            raise HomeAssistantError(str(err)) from err
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="command_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
         await self.coordinator.async_request_refresh()

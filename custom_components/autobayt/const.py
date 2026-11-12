@@ -30,12 +30,19 @@ DEFAULT_SCAN_INTERVAL: Final = 10  # seconds, the owner's explicit choice
 MIN_SCAN_INTERVAL: Final = 5
 MAX_SCAN_INTERVAL: Final = 600
 MAX_BACKOFF_INTERVAL: Final = timedelta(minutes=5)
+# Entities stay on their last known state through this many failed refreshes
+# in a row minus one, so a single dropped request does not flash them
+# unavailable.
+FAILURES_BEFORE_UNAVAILABLE: Final = 3
+# A device missing from this many successful refreshes in a row is removed.
+MISSING_POLLS_BEFORE_REMOVAL: Final = 3
 
 # Energy readings go stale on the backend after ~16 minutes and polling does
 # not request a fresh measurement, so there is no point asking more often.
 ENERGY_LIVE_INTERVAL: Final = timedelta(minutes=3)
 ENERGY_PERIOD_INTERVAL: Final = timedelta(minutes=15)
-DEFAULT_ENERGY_TIMEZONE: Final = "Asia/Amman"
+# Used only when neither the options nor Home Assistant name a time zone.
+DEFAULT_ENERGY_TIMEZONE: Final = "UTC"
 
 # Follow-up refreshes after a command, in seconds from the command.
 COMMAND_REFRESH_DELAYS: Final = (2, 5, 10)

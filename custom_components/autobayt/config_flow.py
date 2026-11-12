@@ -28,6 +28,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
     TextSelectorType,
 )
+from homeassistant.util import dt as dt_util
 
 from .api import AutobaytAuthError, AutobaytClient, AutobaytConnectionError, AutobaytError
 from .const import (
@@ -41,7 +42,6 @@ from .const import (
     CONF_TIMEZONE,
     CONF_TOKEN,
     CONF_USER_ID,
-    DEFAULT_ENERGY_TIMEZONE,
     DEFAULT_HOST,
     DEFAULT_LIGHT_WORDS,
     DEFAULT_SCAN_INTERVAL,
@@ -49,6 +49,7 @@ from .const import (
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
 )
+from .coordinator import energy_timezone
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,6 +65,24 @@ _CREDENTIALS = {
 }
 
 
+def _host_section(default: str) -> section:
+    return section(
+        vol.Schema(
+            {
+                vol.Required(CONF_HOST, default=default): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.URL)
+                )
+            }
+        ),
+        {"collapsed": True},
+    )
+
+
+def _host_from(user_input: dict[str, Any], default: str) -> str:
+    advanced = user_input.get(SECTION_ADVANCED) or {}
+    return str(advanced.get(CONF_HOST) or default).strip().rstrip("/")
+
+
 class AutobaytConfigFlow(ConfigFlow, domain=DOMAIN):
     """Sign in to Autobayt and choose which location to add."""
 
@@ -76,59 +95,40 @@ class AutobaytConfigFlow(ConfigFlow, domain=DOMAIN):
         self._user_id: str | None = None
         self._locations: dict[str, str] = {}
 
-    async def _login(self, user_input: dict[str, Any]) -> tuple[AutobaytClient, dict[str, str]]:
-        errors: dict[str, str] = {}
+    async def _sign_in(self, user_input: dict[str, Any]) -> dict[str, str]:
+        """Sign in and read the account's locations. Return form errors."""
         client = AutobaytClient(async_get_clientsession(self.hass), self._host)
         try:
             self._token, self._user_id = await client.login(
                 user_input[CONF_EMAIL], user_input[CONF_PASSWORD]
             )
+            locations = await client.get_locations(self._user_id)
         except AutobaytAuthError:
-            errors["base"] = "invalid_auth"
+            return {"base": "invalid_auth"}
         except AutobaytConnectionError:
-            errors["base"] = "cannot_connect"
+            return {"base": "cannot_connect"}
         except AutobaytError:
-            errors["base"] = "unknown"
+            return {"base": "unknown"}
         except Exception:
             _LOGGER.exception("Unexpected error while signing in to Autobayt")
-            errors["base"] = "unknown"
-        return client, errors
+            return {"base": "unknown"}
+        self._locations = {str(loc["_id"]): str(loc.get("name") or "Home") for loc in locations}
+        return {}
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Ask for the Autobayt account."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            advanced = user_input.get(SECTION_ADVANCED) or {}
-            self._host = str(advanced.get(CONF_HOST) or DEFAULT_HOST).strip().rstrip("/")
-            client, errors = await self._login(user_input)
+            self._host = _host_from(user_input, DEFAULT_HOST)
+            errors = await self._sign_in(user_input)
             if not errors:
-                try:
-                    locations = await client.get_locations(self._user_id)
-                except AutobaytError:
-                    errors["base"] = "cannot_connect"
-                else:
-                    self._locations = {
-                        str(loc["_id"]): str(loc.get("name") or "Home") for loc in locations
-                    }
-                    if not self._locations:
-                        return self.async_abort(reason="no_locations")
-                    if len(self._locations) == 1:
-                        return await self._create(next(iter(self._locations)))
-                    return await self.async_step_location()
+                if not self._locations:
+                    return self.async_abort(reason="no_locations")
+                if len(self._locations) == 1:
+                    return await self._create(next(iter(self._locations)))
+                return await self.async_step_location()
 
-        schema = {
-            **_CREDENTIALS,
-            vol.Required(SECTION_ADVANCED): section(
-                vol.Schema(
-                    {
-                        vol.Required(CONF_HOST, default=DEFAULT_HOST): TextSelector(
-                            TextSelectorConfig(type=TextSelectorType.URL)
-                        )
-                    }
-                ),
-                {"collapsed": True},
-            ),
-        }
+        schema = {**_CREDENTIALS, vol.Required(SECTION_ADVANCED): _host_section(DEFAULT_HOST)}
         return self.async_show_form(step_id="user", data_schema=vol.Schema(schema), errors=errors)
 
     async def async_step_location(
@@ -176,16 +176,48 @@ class AutobaytConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         entry = self._get_reauth_entry()
         if user_input is not None:
-            _client, errors = await self._login(user_input)
+            errors = await self._sign_in(user_input)
             if not errors:
-                if self._user_id != entry.data[CONF_USER_ID]:
-                    return self.async_abort(reason="wrong_account")
+                await self.async_set_unique_id(f"{self._user_id}_{entry.data[CONF_LOCATION_ID]}")
+                self._abort_if_unique_id_mismatch(reason="wrong_account")
                 return self.async_update_reload_and_abort(
                     entry, data_updates={CONF_TOKEN: self._token}
                 )
         return self.async_show_form(
             step_id="reauth_confirm",
             data_schema=vol.Schema(_CREDENTIALS),
+            errors=errors,
+            description_placeholders={"location": entry.title},
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Sign in again, optionally to another server address, for the same home."""
+        errors: dict[str, str] = {}
+        entry = self._get_reconfigure_entry()
+        current_host = entry.data.get(CONF_HOST, DEFAULT_HOST)
+        if user_input is not None:
+            self._host = _host_from(user_input, current_host)
+            errors = await self._sign_in(user_input)
+            if not errors:
+                location_id = entry.data[CONF_LOCATION_ID]
+                await self.async_set_unique_id(f"{self._user_id}_{location_id}")
+                self._abort_if_unique_id_mismatch(reason="wrong_account")
+                if location_id not in self._locations:
+                    return self.async_abort(reason="location_missing")
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={
+                        CONF_HOST: self._host,
+                        CONF_TOKEN: self._token,
+                        CONF_LOCATION_NAME: self._locations[location_id],
+                    },
+                )
+        schema = {**_CREDENTIALS, vol.Required(SECTION_ADVANCED): _host_section(current_host)}
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={"location": entry.title},
         )
@@ -198,14 +230,20 @@ class AutobaytConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class AutobaytOptionsFlow(OptionsFlowWithReload):
-    """Polling interval, shutter models and energy sensors."""
+    """Polling interval, shutter models, light words and energy sensors."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Show the options."""
+        errors: dict[str, str] = {}
         if user_input is not None:
             user_input[CONF_SCAN_INTERVAL] = int(user_input[CONF_SCAN_INTERVAL])
-            return self.async_create_entry(data=user_input)
-        options = self.config_entry.options
+            timezone = str(user_input.get(CONF_TIMEZONE, "")).strip()
+            user_input[CONF_TIMEZONE] = timezone
+            if dt_util.get_time_zone(timezone) is None:
+                errors[CONF_TIMEZONE] = "invalid_timezone"
+            else:
+                return self.async_create_entry(data=user_input)
+        options = {**self.config_entry.options, **(user_input or {})}
         schema = vol.Schema(
             {
                 vol.Required(
@@ -230,8 +268,9 @@ class AutobaytOptionsFlow(OptionsFlowWithReload):
                 vol.Required(CONF_ENERGY, default=options.get(CONF_ENERGY, True)): bool,
                 vol.Required(
                     CONF_TIMEZONE,
-                    default=options.get(CONF_TIMEZONE, DEFAULT_ENERGY_TIMEZONE),
+                    default=options.get(CONF_TIMEZONE)
+                    or energy_timezone(self.hass, self.config_entry),
                 ): TextSelector(),
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

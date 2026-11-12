@@ -18,6 +18,10 @@
               "host": "Only change this if Autobayt gave you a different server address."
             }
           }
+        },
+        "data_description": {
+          "email": "The email you sign in to the Autobayt app with.",
+          "password": "Your Autobayt app password. It is used once to get a sign-in token and is not stored."
         }
       },
       "location": {
@@ -25,6 +29,9 @@
         "description": "Pick the Autobayt location to add. Add the integration again for another location.",
         "data": {
           "location_id": "Location"
+        },
+        "data_description": {
+          "location_id": "The Autobayt home whose devices to add."
         }
       },
       "reauth_confirm": {
@@ -33,6 +40,33 @@
         "data": {
           "email": "Email",
           "password": "Password"
+        },
+        "data_description": {
+          "email": "The email you sign in to the Autobayt app with.",
+          "password": "Your Autobayt app password. It is used once to get a sign-in token and is not stored."
+        }
+      },
+      "reconfigure": {
+        "title": "Change the Autobayt sign-in",
+        "description": "Sign in again for {location}, for example after changing your password or when Autobayt gives you a new server address. It must be the same Autobayt account.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        },
+        "data_description": {
+          "email": "The email you sign in to the Autobayt app with.",
+          "password": "Your Autobayt app password. It is used once to get a sign-in token and is not stored."
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "data": {
+              "host": "Server address"
+            },
+            "data_description": {
+              "host": "Only change this if Autobayt gave you a different server address."
+            }
+          }
         }
       }
     },
@@ -45,7 +79,9 @@
       "already_configured": "This location is already added.",
       "no_locations": "This Autobayt account has no locations.",
       "reauth_successful": "Signed in again.",
-      "wrong_account": "That is a different Autobayt account than the one this location was added with."
+      "wrong_account": "That is a different Autobayt account than the one this home was added with.",
+      "reconfigure_successful": "Sign-in updated.",
+      "location_missing": "This Autobayt account no longer has this home."
     }
   },
   "options": {
@@ -63,10 +99,13 @@
           "scan_interval": "How often to ask Autobayt for switch states, in seconds.",
           "shutter_models": "Comma-separated model names to treat as shutters, if a shutter shows up as switches.",
           "energy": "Show power and today's energy for power-metering (PM) devices.",
-          "energy_timezone": "IANA time zone that decides when the day starts, for example Asia/Amman.",
+          "energy_timezone": "IANA time zone that decides when the day starts, for example Asia/Amman. Defaults to the time zone of Home Assistant.",
           "light_words": "A channel whose name contains one of these comma-separated words is shown as a light; the rest are switches. The light channel on a shutter plate is always a light."
         }
       }
+    },
+    "error": {
+      "invalid_timezone": "Not a known time zone. Use a name such as Europe/Berlin or Asia/Amman."
     }
   },
   "entity": {
@@ -77,6 +116,39 @@
       "energy_today": {
         "name": "Energy today"
       }
+    },
+    "light": {
+      "plate_light": {
+        "name": "Light"
+      },
+      "named_plate_light": {
+        "name": "{label} light"
+      },
+      "channel": {
+        "name": "Channel {number}"
+      }
+    },
+    "switch": {
+      "channel": {
+        "name": "Channel {number}"
+      }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "Autobayt no longer accepts the saved sign-in. Sign in again."
+    },
+    "update_failed": {
+      "message": "Could not read the devices from Autobayt: {error}"
+    },
+    "energy_update_failed": {
+      "message": "Could not read energy from Autobayt: {error}"
+    },
+    "command_failed": {
+      "message": "Autobayt did not accept the command: {error}"
+    },
+    "shutter_control_unavailable": {
+      "message": "Shutters cannot be controlled from Home Assistant yet: Autobayt has not published a way to control them. Use the Autobayt app."
     }
   }
 }

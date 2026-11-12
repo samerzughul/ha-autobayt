@@ -20,24 +20,42 @@ _SHUTTER_PATTERN = re.compile(r"shutter|curtain|blind|roller|^(SH|CT|CR|CUR)\d",
 SHUTTER_MOTOR_CHANNELS = frozenset({0, 1})
 
 # Raw fields kept for diagnostics must not identify the account, home or
-# hardware.
-_PRIVATE_KEY = re.compile(r"(^|_)id$|_ids?$|mac|ip|ssid|email|token|user|owner|serial|key", re.I)
+# hardware. Keys are matched case-insensitively, so camelCase ids such as
+# "deviceId" are caught as well as snake_case ones.
+_PRIVATE_KEY = re.compile(
+    r"id$|ids$|mac|(^|_)ip|ssid|email|token|user|owner|serial|key|topic|secret|password",
+    re.I,
+)
+REDACTED = "**REDACTED**"
 
 
-def public_fields(raw: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of raw backend fields without identifying values."""
+def public_fields(raw: dict[str, Any], secrets: Iterable[str] = ()) -> dict[str, Any]:
+    """Return a copy of raw backend fields without identifying values.
+
+    Values under identifying keys are replaced, and any known identifier in
+    ``secrets`` is also removed from other text, for example from a topic or
+    a URL that embeds a device id.
+    """
+    known = sorted({s for s in secrets if s and len(s) >= 3}, key=len, reverse=True)
+
+    def scrub(value: Any) -> Any:
+        if isinstance(value, dict):
+            return public_fields(value, known)
+        if isinstance(value, list):
+            return [scrub(v) for v in value]
+        if isinstance(value, str):
+            for secret in known:
+                value = value.replace(secret, REDACTED)
+        return value
+
     out: dict[str, Any] = {}
     for key, value in raw.items():
         if key == "button_id":
             out[key] = value
         elif _PRIVATE_KEY.search(key):
-            out[key] = "**REDACTED**"
-        elif isinstance(value, dict):
-            out[key] = public_fields(value)
-        elif isinstance(value, list):
-            out[key] = [public_fields(v) if isinstance(v, dict) else v for v in value]
+            out[key] = REDACTED
         else:
-            out[key] = value
+            out[key] = scrub(value)
     return out
 
 
